@@ -1,0 +1,1 @@
+cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 type_check.py -f tests/control_flow.py

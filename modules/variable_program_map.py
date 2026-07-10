@@ -69,7 +69,7 @@ class VariableProgramMap():
         raw_type = self.evaluate_rhs(left_expr, symbol_table, scope)
         return (identifier,raw_type,line)
     
-    def evaluate_rhs(self, left_expr, symbol_table: SymbolTable, scope: Scope)-> str:
+    def evaluate_rhs(self, left_expr: ast.AST , symbol_table: SymbolTable, scope: Scope)-> str:
         raw_type = Unassigned()
         if isinstance(left_expr, ast.Constant):
             raw_obj = ast.literal_eval(left_expr)
@@ -106,6 +106,9 @@ class VariableProgramMap():
     def __repr__(self) -> str:
         return f"VariableProgramMap(file={self.file!r})"
 
+
+class ExprEvaluator():
+    pass
 
 class ConstantExprEvaluator():
     pass
