@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
 
-cd ~/desktop/my_files/static_type_analysis_engine_Python &&  python3 tester.py "$@"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+export PYTHONPATH="$ROOT"
+
+cd "$ROOT" && python3 tests/tester.py "$@"

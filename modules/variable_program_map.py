@@ -10,7 +10,7 @@ class VariableProgramMap():
     def __init__(self, file: str) -> None:
         self.file = file
         self.file_ast = self.build_file_ast(self.file)
-        self.program_scope_tree = LexicalScopeTree()
+        self.program_table_tree = LexicalScopeTree()
         self.symbol_table_stack = []
         self.top_table = None
 
@@ -56,7 +56,7 @@ class VariableProgramMap():
             elif isinstance(node, ast.For):
                 right_expr = node.target
                 left_expr =  node.iter
-                identifier,raw_type,line = self.evaluate_assignmet(right_expr, left_expr)
+                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
                 if identifier not in symbol_table:
                     symbol_table.insert(identifier, Unassigned(), 0, scope)
                 if not (isinstance(raw_type, Unassigned)):
@@ -107,7 +107,7 @@ class VariableProgramMap():
             elif isinstance(node, ast.AugAssign):
                 right_expr = node.target
                 left_expr =  node.value
-                identifier,raw_type,line = self.evaluate_assignmet(right_expr, left_expr)
+                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
 
                 if identifier not in symbol_table:
                     symbol_table.insert(identifier, Unassigned(), 0, scope)
@@ -117,7 +117,7 @@ class VariableProgramMap():
             # multi assignment
             elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Tuple):
                 for right_expr,left_expr in zip(node.targets[0].elts, node.value.elts):
-                    identifier,raw_type,line = self.evaluate_assignmet(right_expr, left_expr)
+                    identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
 
                     if identifier not in symbol_table:
                         symbol_table.insert(identifier, Unassigned(), 0, scope)
@@ -129,7 +129,7 @@ class VariableProgramMap():
             elif isinstance(node, ast.Assign):
                 right_expr = node.targets[0] 
                 left_expr =  node.value
-                identifier,raw_type,line = self.evaluate_assignmet(right_expr, left_expr)
+                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
                 
                 if identifier not in symbol_table:
                     symbol_table.insert(identifier, Unassigned(), 0, scope)
@@ -140,9 +140,9 @@ class VariableProgramMap():
 
         start_line = code_block[0].lineno if code_block else 0
         end_line = code_block[-1].end_lineno if code_block else 0
-        self.program_scope_tree.insert((symbol_table, start_line, end_line))
+        self.program_table_tree.insert((symbol_table, start_line, end_line))
 
-    def evaluate_assignmet(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
+    def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
         identifier,line = self.evaluate_target(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
         return (identifier,raw_type,line)
@@ -151,7 +151,7 @@ class VariableProgramMap():
         symbol_table = self.symbol_table_stack[-1]
         raw_type = Unassigned()
         if isinstance(left_expr, ast.Constant):
-            evaluator = ConstantExprEvaluator
+            evaluator = ConstantExprEvaluator()
             raw_type = evaluator.evaluate(left_expr)
 
         elif isinstance(left_expr, ast.Name):
@@ -177,7 +177,7 @@ class VariableProgramMap():
     def __str__(self) -> str:
         if self.top_table is None:
             return "VariableProgramMap (not yet traced)"
-        return str(self.top_table) + f"\n{str(  self.program_scope_tree.tree)}"
+        return str(self.top_table) + f"\n{str(  self.program_table_tree.tree)}"
 
     def __repr__(self) -> str:
         return f"VariableProgramMap(file={self.file!r})"

@@ -1,1 +1,6 @@
-cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 type_check.py -f tests/functions/func_def_defaults.py
+#!/usr/bin/env bash
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+export PYTHONPATH="$ROOT"
+
+cd "$ROOT" && python3 type_check.py "$@"

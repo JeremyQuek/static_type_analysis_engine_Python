@@ -1,7 +1,7 @@
 from pathlib import Path
 import argparse
 
-from modules.variable_program_map import VariableProgramMap
+from tests.test_runner import TestRunner
 
 
 class Tester:
@@ -9,69 +9,37 @@ class Tester:
         self.tests_root = tests_root
         self.directories = directories
         self.file_prefix = file_prefix
+        self.runner = TestRunner()
 
     def run(self) -> None:
         if self.file_prefix:
             self.run_test_prefix(self.file_prefix)
         else:
             self.run_test_dirs(self.directories)
+        self.runner.summary()
 
     def run_test_dirs(self, directories: list[Path]) -> None:
-        passed = 0
-        total = 0
-
         for directory in directories:
-            p, t = self.run_test_dir(directory)
-            passed += p
-            total += t
-
-        print(f"\nPassed {passed}/{total} tests.")
+            self.run_test_dir(directory)
 
     def run_test_dir(self, directory: Path):
         files = sorted(directory.glob("*.py"))
 
         if not files:
-            return 0, 0
+            return
 
         print(f"Running {directory.name}...\n")
 
-        passed = 0
-        total = 0
-
         for file in files:
-            total += 1
-            if self.run_test_file(file, directory):
-                passed += 1
+            self.runner.run_test_file(file, directory)
 
         print()
 
-        return passed, total
-
     def run_test_prefix(self, prefix: str):
-        passed = 0
-        total = 0
-
         print(f"Running tests with prefix '{prefix}'...\n")
 
         for file in sorted(self.tests_root.rglob(f"{prefix}*.py")):
-            total += 1
-            if self.run_test_file(file, self.tests_root):
-                passed += 1
-
-        print(f"\nPassed {passed}/{total} tests.")
-
-    def run_test_file(self, file: Path, root: Path) -> bool:
-        try:
-            variable_map = VariableProgramMap(str(file))
-            variable_map.trace()
-
-            print(f"✓ {file.relative_to(root)}")
-            return True
-
-        except Exception as e:
-            print(f"✗ {file.relative_to(root)}")
-            print(f"    {e}")
-            return False
+            self.runner.run_test_file(file, self.tests_root)
 
 
 def main() -> None:
@@ -94,7 +62,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    tests_root = Path(__file__).parent / "tests"
+    tests_root = Path(__file__).parent
 
     if args.directories == ["*"]:
         directories = [d for d in tests_root.iterdir() if d.is_dir()]
