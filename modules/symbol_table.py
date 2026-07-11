@@ -1,6 +1,9 @@
 
+import ast
 from copy import deepcopy
 from collections import defaultdict
+
+from modules.scopes import Scope
 from modules.type_lattice import Unassigned, join
 
 class SymbolTableEntry():
@@ -17,14 +20,26 @@ class SymbolTable():
     def insert(self, identifier, _type, line, scope):
         self.table[identifier].append(SymbolTableEntry(line, _type, scope))
 
-    def fork_for_branch(self):
+    def fork_for_branch(self) -> SymbolTable:
         child = SymbolTable()
         child.table = deepcopy(self.table)
         return child
     
-    def fork_for_function(self):
+
+    def fork_for_function(self, parameters_list: list[tuple[str, type, int]]) -> SymbolTable:
         child = SymbolTable()
-        child.table = deepcopy(self.table)
+        # Fork and change scopes
+        for identifier in self.table:
+            for entry in self.table[identifier]:
+                modified_scope = entry.scope
+                if entry.scope == Scope.LOCAL:
+                    modified_scope = Scope.ENCLOSING
+                child.insert(identifier, entry.type, entry.line, modified_scope)
+
+        # insert params
+        for arg_identifier, arg_type, arg_line in parameters_list:
+            child.insert(arg_identifier, arg_type, arg_line, Scope.LOCAL)
+        
         return child
 
     def merge_branch(self, merge_line, scope, *branches, parent_branch=True):
@@ -70,7 +85,7 @@ class SymbolTable():
 
             self.insert(identifier, merged_type, merge_line,scope)
 
-    def merge_function(self, nested_function_symbol_tables):
+    def merge_function_def(self, nested_function_symbol_tables):
         pass
     
 

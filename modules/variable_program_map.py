@@ -1,15 +1,10 @@
 import ast
-from enum import Enum
-from modules.type_lattice import Unassigned
-from modules.symbol_table import SymbolTable
-from modules.lexical_scope_tree import LexicalScopeTree
+import types
 
-class Scope(Enum):
-    GLOBAL = "G"
-    BUILTIN = "B"
-    ENCLOSING = "E"
-    LOCAL = "L"
-    CONTROL= "C"
+from modules.scopes import Scope
+from modules.symbol_table import SymbolTable
+from modules.type_lattice import Unassigned, Unknown
+from modules.lexical_scope_tree import LexicalScopeTree
 
 class VariableProgramMap():
     def __init__(self, file: str) -> None:
@@ -24,11 +19,12 @@ class VariableProgramMap():
         self.symbol_table_stack.append( self.top_table )
         self.analyze_code_block(self.file_ast.body, Scope.GLOBAL)
 
-    def analyze_code_block(self, code_block, scope: Scope):
+    # TODO
+    # Handle scope changes for individual variables
+    def analyze_code_block(self, code_block: list[ast.AST], scope: Scope) -> None:
         symbol_table = self.symbol_table_stack[-1]
 
         for node in code_block:
-            # Control flow
             if isinstance(node, ast.If):
                 if_symbol_table = symbol_table.fork_for_branch()
                 self.symbol_table_stack.append(if_symbol_table)
@@ -54,6 +50,9 @@ class VariableProgramMap():
 
                 symbol_table.merge_branch(node.end_lineno, scope, while_symbol_table)
             
+            # TODO
+            # Handle variable unpacking in the for
+            # To be implemented after implementing support for call sites
             elif isinstance(node, ast.For):
                 right_expr = node.target
                 left_expr =  node.iter
@@ -68,6 +67,41 @@ class VariableProgramMap():
                 self.analyze_code_block(node.body, scope)
                 self.symbol_table_stack.pop()
 
+            # TODO
+            # Handle args
+            # Handle kwards
+            # Handle return annotations
+            elif isinstance(node, ast.FunctionDef):
+                parameters_list = []
+                # parse args
+                for arg_block in node.args.args:
+                    arg_identifier = arg_block.arg
+                    arg_line = arg_block.lineno
+                    arg_type = Unknown() if not arg_block.annotation else arg_block.annotation.id
+                    parameters_list.append([arg_identifier, arg_type, arg_line])
+
+                # factor in defaults
+                cur_param_idx = len(parameters_list)-1
+                for default_value in node.args.defaults:
+                    evaluator = ConstantExprEvaluator()
+                    default_type = evaluator.evaluate(default_value)
+                    # Theoretically we should have bounds check here since we are manually iterating indexes
+                    # But practically len(defaults) should nvr > len(argument.args)
+                    if parameters_list[cur_param_idx][1] == Unknown():
+                        parameters_list[cur_param_idx][1] = default_type
+                    cur_param_idx-=1
+                
+                #fork
+                function_def_symbol_table= symbol_table.fork_for_function(parameters_list)
+                self.symbol_table_stack.append(function_def_symbol_table)
+                self.analyze_code_block(function_def_symbol_table)
+                self.symbol_table_stack.pop()
+
+                symbol_table.merge_function_def(node.end_lineno, scope, while_symbol_table)
+                
+                func_name = node.name
+                func_line = node.lineno
+                symbol_table.insert(func_name, types.FunctionType, func_line, scope)
 
             # Aug assign statement 
             elif isinstance(node, ast.AugAssign):
@@ -108,12 +142,12 @@ class VariableProgramMap():
         end_line = code_block[-1].end_lineno if code_block else 0
         self.program_scope_tree.insert((symbol_table, start_line, end_line))
 
-    def evaluate_assignmet(self, right_expr: ast.Target, left_expr)-> list[str, int, int]:
+    def evaluate_assignmet(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
         identifier,line = self.evaluate_target(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
         return (identifier,raw_type,line)
     
-    def evaluate_rhs(self, left_expr: ast.AST)-> str:
+    def evaluate_rhs(self, left_expr: ast.AST)-> type:
         symbol_table = self.symbol_table_stack[-1]
         raw_type = Unassigned()
         if isinstance(left_expr, ast.Constant):
@@ -127,7 +161,7 @@ class VariableProgramMap():
             raw_type = evaluator.evaluate(left_expr, symbol_table)
         return raw_type
 
-    def evaluate_target(self, right_expr: ast.Target)-> list[str, int]:
+    def evaluate_target(self, right_expr: ast.Target)-> tuple[str, int]:
         symbol_table = self.symbol_table_stack[-1]
 
         line = right_expr.lineno
@@ -152,13 +186,13 @@ class ExprEvaluator:
     pass
 
 class ConstantExprEvaluator():
-    def evaluate(expr):
+    def evaluate(self, expr: ast.Costant) -> type:
         raw_obj = ast.literal_eval(expr)
         raw_type = type(raw_obj)
         return raw_type
 
 class NameExprEvaluator():
-    def evaluate(expr, symbol_table):
+    def evaluate(self, expr: ast.AST, symbol_table: SymbolTable) -> type:
         left_identifier = expr.id 
         left_identifier_table = symbol_table[left_identifier]
         left_identifier_latest_entry = left_identifier_table[-1]

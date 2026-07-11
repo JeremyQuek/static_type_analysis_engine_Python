@@ -1,1 +1,1 @@
-cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 quick_print.py -f tests/if.py
+cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 quick_print.py -f tests/functions/func_call.py

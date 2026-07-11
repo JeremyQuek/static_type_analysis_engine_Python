@@ -2,10 +2,19 @@ class Concrete():
     pass
 
 class Unassigned():
-    pass
+    def __eq__(self, other):
+        return isinstance(other, Unassigned)
     
-class Unknown():
-    pass
+    def __repr__(self):
+        return "lattice<Unassigned>"
+
+    
+class Unknown:
+    def __eq__(self, other):
+        return isinstance(other, Unknown)
+
+    def __repr__(self):
+        return "lattice<Unknown>"
 
 class Union():
     def __init__(self):
@@ -21,7 +30,7 @@ class Union():
         )
 
     def __repr__(self):
-        return f"Union({{{self.__str__()}}})"
+        return f"lattice.Union({{{self.__str__()}}})"
 
     def __eq__(self, other):
         if not isinstance(other, Union):

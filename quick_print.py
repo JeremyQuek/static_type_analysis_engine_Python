@@ -2,13 +2,6 @@ import argparse
 import ast
 
 
-def print_line(tree, lineno, include_attributes):
-    # Dump the top-level statement that starts on the given source line.
-    for node in tree.body:
-        if getattr(node, "lineno", None) == lineno:
-            print(ast.dump(node, indent=2, include_attributes=include_attributes))
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Python AST Dumper"
@@ -37,10 +30,14 @@ def main():
         tree = ast.parse(f.read())
 
     if args.line is None:
-        print(ast.dump(tree, indent=2, include_attributes=args.attributes))
+        print(ast.dump(tree, indent=2, include_attributes=True))
     else:
         print_line(tree, args.line, args.attributes)
 
-
+def print_line(tree, lineno, include_attributes):
+    for node in tree.body:
+        if getattr(node, "lineno", None) == lineno:
+            print(ast.dump(node, indent=2, include_attributes=include_attributes))
+        
 if __name__ == "__main__":
     main()

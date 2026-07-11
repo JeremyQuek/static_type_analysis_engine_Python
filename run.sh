@@ -1,1 +1,1 @@
-cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 type_check.py -f tests/assignment/tuple_assign.py
+cd ~/desktop/my_files/static_type_analysis_engine_Python && python3 type_check.py -f tests/functions/func_def_defaults.py
