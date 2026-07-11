@@ -12,8 +12,6 @@ if random.randint(0, 2) == 0:
             g = float('inf')
 elif random.randint(0, 2) == 1:
     x = 3.5                 # branch B -> x: float
-else: 
-    x = None
 
 
 x = 5

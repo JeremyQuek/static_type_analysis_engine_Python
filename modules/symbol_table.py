@@ -27,7 +27,7 @@ class SymbolTable():
         child.table = deepcopy(self.table)
         return child
 
-    def merge_branch(self, merge_line, scope, *branches):
+    def merge_branch(self, merge_line, scope, *branches, parent_branch=True):
         # Snapshot the symbol table state before branching.
         parent_lengths = {
             identifier: len(entries)
@@ -60,7 +60,11 @@ class SymbolTable():
                         parent_entries[-1].type if parent_entries else Unassigned()
                     )
 
-            merged_type = Unassigned()
+            if identifier not in self.table or not parent_branch:
+                merged_type = Unassigned() 
+            else:
+                merged_type= self.table[identifier][-1].type
+                
             for _type in branch_types:
                 merged_type = join(merged_type, _type)
 
@@ -86,3 +90,4 @@ class SymbolTable():
 
     def __getitem__(self, identifier):
         return self.table[identifier]
+
