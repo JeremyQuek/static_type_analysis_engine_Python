@@ -12,7 +12,6 @@ class SymbolTableEntry():
         self.type = _type
         self.scope = scope
 
-
 class SymbolTable():
     def __init__(self):
         self.table= defaultdict(list)
@@ -76,6 +75,7 @@ class SymbolTable():
                     )
 
             if identifier not in self.table or not parent_branch:
+                self.insert(identifier, Unassigned(), 0, scope)
                 merged_type = Unassigned() 
             else:
                 merged_type= self.table[identifier][-1].type
@@ -86,6 +86,7 @@ class SymbolTable():
             self.insert(identifier, merged_type, merge_line,scope)
 
     def merge_function_def(self, nested_function_symbol_tables):
+        
         pass
     
 

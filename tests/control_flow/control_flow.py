@@ -9,7 +9,7 @@ if random.randint(0, 2) == 0:
         g = False
         if not False:
             h = "st"
-            g = float('inf')
+            g = 5.5
 elif random.randint(0, 2) == 1:
     x = 3.5                 # branch B -> x: float
 
