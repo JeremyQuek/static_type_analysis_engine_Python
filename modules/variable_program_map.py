@@ -6,6 +6,10 @@ from modules.symbol_table import SymbolTable
 from modules.type_lattice import Unassigned, Unknown
 from modules.lexical_scope_tree import LexicalScopeTree
 
+# TODO
+# 1) Float(inf) is not handled because callables aren't implemented
+
+
 class VariableProgramMap():
     def __init__(self, file: str) -> None:
         self.file = file
@@ -53,14 +57,16 @@ class VariableProgramMap():
             # TODO
             # Handle variable unpacking in the for
             # To be implemented after implementing support for call sites
+            # Also handle extracting the type for method "__contains__" in iteration:
+            # for x in container
             elif isinstance(node, ast.For):
                 right_expr = node.target
                 left_expr =  node.iter
-                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
-                if identifier not in symbol_table:
-                    symbol_table.insert(identifier, Unassigned(), 0, scope)
+                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
+                if _id not in symbol_table:
+                    symbol_table.insert(_id, Unassigned(), 0, scope)
                 if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(identifier, raw_type, line, scope)
+                    symbol_table.insert(_id, raw_type, line, scope)
 
                 for_symbol_table = symbol_table.fork_for_branch()
                 self.symbol_table_stack.append(for_symbol_table)
@@ -75,10 +81,10 @@ class VariableProgramMap():
                 parameters_list = []
                 # parse args
                 for arg_block in node.args.args:
-                    arg_identifier = arg_block.arg
+                    arg__id = arg_block.arg
                     arg_line = arg_block.lineno
                     arg_type = Unknown() if not arg_block.annotation else arg_block.annotation.id
-                    parameters_list.append([arg_identifier, arg_type, arg_line])
+                    parameters_list.append([arg__id, arg_type, arg_line])
 
                 # factor in defaults
                 cur_param_idx = len(parameters_list)-1
@@ -107,35 +113,38 @@ class VariableProgramMap():
             elif isinstance(node, ast.AugAssign):
                 right_expr = node.target
                 left_expr =  node.value
-                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
+                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
 
-                if identifier not in symbol_table:
-                    symbol_table.insert(identifier, Unassigned(), 0, scope)
+                if _id not in symbol_table:
+                    symbol_table.insert(_id, Unassigned(), 0, scope)
                 if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(identifier, raw_type, line, scope)
+                    symbol_table.insert(_id, raw_type, line, scope)
 
             # multi assignment
             elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Tuple):
                 for right_expr,left_expr in zip(node.targets[0].elts, node.value.elts):
-                    identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
+                    _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
 
-                    if identifier not in symbol_table:
-                        symbol_table.insert(identifier, Unassigned(), 0, scope)
+                    if _id not in symbol_table:
+                        symbol_table.insert(_id, Unassigned(), 0, scope)
 
                     if not (isinstance(raw_type, Unassigned)):
-                        symbol_table.insert(identifier, raw_type, line, scope)
+                        symbol_table.insert(_id, raw_type, line, scope)
 
             # normal assignment
             elif isinstance(node, ast.Assign):
                 right_expr = node.targets[0] 
                 left_expr =  node.value
-                identifier,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
+                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
                 
-                if identifier not in symbol_table:
-                    symbol_table.insert(identifier, Unassigned(), 0, scope)
+
+                # TODO
+                # is unassigned insertion always just on scope?
+                if _id not in symbol_table.table[scope]:
+                    symbol_table.insert(_id, Unassigned(), 0, scope)
 
                 if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(identifier, raw_type, line, scope)
+                    symbol_table.insert(_id, raw_type, line, scope)
 
 
         start_line = code_block[0].lineno if code_block else 0
@@ -143,9 +152,9 @@ class VariableProgramMap():
         self.program_table_tree.insert((symbol_table, start_line, end_line))
 
     def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
-        identifier,line = self.evaluate_target(right_expr)
+        _id,line = self.evaluate_target(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
-        return (identifier,raw_type,line)
+        return (_id,raw_type,line)
     
     def evaluate_rhs(self, left_expr: ast.AST)-> type:
         symbol_table = self.symbol_table_stack[-1]
@@ -156,7 +165,7 @@ class VariableProgramMap():
 
         elif isinstance(left_expr, ast.Name):
             # TODO
-            # Add checks if the leftmost identifier doesnt exist in the program! (Users can make mistakes in their code)
+            # Add checks if the leftmost _id doesnt exist in the program! (Users can make mistakes in their code)
             evaluator = NameExprEvaluator
             raw_type = evaluator.evaluate(left_expr, symbol_table)
         return raw_type
@@ -165,9 +174,9 @@ class VariableProgramMap():
         symbol_table = self.symbol_table_stack[-1]
 
         line = right_expr.lineno
-        identifier = right_expr.id
+        _id = right_expr.id
 
-        return identifier,line
+        return _id,line
 
     def build_file_ast(self, file: str) -> ast.Module:
         with open(file) as f:
@@ -191,12 +200,13 @@ class ConstantExprEvaluator():
         raw_type = type(raw_obj)
         return raw_type
 
+# needs to be updated to resolve on LEGB scopign, rn it only handles resolution on global
 class NameExprEvaluator():
     def evaluate(self, expr: ast.AST, symbol_table: SymbolTable) -> type:
-        left_identifier = expr.id 
-        left_identifier_table = symbol_table[left_identifier]
-        left_identifier_latest_entry = left_identifier_table[-1]
-        raw_type = left_identifier_latest_entry.type
+        left__id = expr.id
+        left__id_table = symbol_table.table[Scope.GLOBAL][left__id]
+        left__id_latest_entry = left__id_table[-1]
+        raw_type = left__id_latest_entry.type
         return raw_type
 
 class FunctionDefExprEvaluator(ExprEvaluator):

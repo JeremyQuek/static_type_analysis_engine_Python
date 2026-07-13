@@ -7,17 +7,21 @@ from modules.scopes import Scope
 from modules.type_lattice import Unassigned, join
 
 class SymbolTableEntry():
-    def __init__(self, line, _type, scope):
-        self.line = line
+    def __init__(self, _type, line):
         self.type = _type
-        self.scope = scope
+        self.line = line
 
 class SymbolTable():
     def __init__(self):
-        self.table= defaultdict(list)
+        self.table= {
+            Scope.BUILTIN: defaultdict(list),
+            Scope.GLOBAL: defaultdict(list),
+            Scope.ENCLOSING: [], # list of dicts, in prepend order
+            Scope.LOCAL: defaultdict(list)
+        }
 
-    def insert(self, identifier, _type, line, scope):
-        self.table[identifier].append(SymbolTableEntry(line, _type, scope))
+    def insert(self, _id, _type, line, scope):
+        self.table[scope][_id].append(SymbolTableEntry(_type, line))
 
     def fork_for_branch(self) -> SymbolTable:
         child = SymbolTable()
@@ -26,84 +30,90 @@ class SymbolTable():
     
 
     def fork_for_function(self, parameters_list: list[tuple[str, type, int]]) -> SymbolTable:
-        child = SymbolTable()
         # Fork and change scopes
-        for identifier in self.table:
-            for entry in self.table[identifier]:
-                modified_scope = entry.scope
-                if entry.scope == Scope.LOCAL:
-                    modified_scope = Scope.ENCLOSING
-                child.insert(identifier, entry.type, entry.line, modified_scope)
+        child = SymbolTable()
+        child.table[Scope.GLOBAL] = deepcopy(self.table[Scope.GLOBAL])
+        child.table[Scope.ENCLOSING] = deepcopy(self.table[Scope.ENCLOSING])
+
+        parent_enclosure= defaultdict(list)
+        for _id, sub_table in self.table[Scope.LOCAL].items():
+            for entry in sub_table:
+                parent_enclosure[_id].append(SymbolTableEntry(entry.type, entry.line))
+        
+        child.table[Scope.ENCLOSING].append(parent_enclosure)
 
         # insert params
-        for arg_identifier, arg_type, arg_line in parameters_list:
-            child.insert(arg_identifier, arg_type, arg_line, Scope.LOCAL)
+        for arg__id, arg_type, arg_line in parameters_list:
+            child.insert(arg__id, arg_type, arg_line, Scope.LOCAL)
         
         return child
 
     def merge_branch(self, merge_line, scope, *branches, parent_branch=True):
-        # Snapshot the symbol table state before branching.
+        # Snapshot: how many entries each _id has in this scope before branching.
         parent_lengths = {
-            identifier: len(entries)
-            for identifier, entries in self.table.items()
+            _id: len(entries)
+            for _id, entries in self.table[scope].items()
         }
 
-        # Only consider identifiers modified in at least one branch.
+        # Only consider _ids modified in at least one branch.
         touched = set()
         for branch in branches:
-            for identifier, entries in branch.table.items():
-                pre = parent_lengths.get(identifier, 0)
+            for _id, entries in branch.table[scope].items():
+                pre = parent_lengths.get(_id, 0)
                 if len(entries) > pre:
-                    touched.add(identifier)
+                    touched.add(_id)
 
         # Merge the resulting types back into the parent table.
-        for identifier in touched:
-            pre = parent_lengths.get(identifier, 0)
+        for _id in touched:
+            pre = parent_lengths.get(_id, 0)
             branch_types = []
 
             for branch in branches:
-                entries = branch.table.get(identifier)
+                entries = branch.table[scope].get(_id)
 
                 if entries and len(entries) > pre:
-                    # Identifier was reassigned in this branch.
                     branch_types.append(entries[-1].type)
                 else:
-                    # Identifier was not reassigned; inherit the parent's type.
-                    parent_entries = self.table.get(identifier)
+                    parent_entries = self.table[scope].get(_id)
                     branch_types.append(
                         parent_entries[-1].type if parent_entries else Unassigned()
                     )
 
-            if identifier not in self.table or not parent_branch:
-                self.insert(identifier, Unassigned(), 0, scope)
-                merged_type = Unassigned() 
+            if _id not in self.table[scope] or not parent_branch:
+                self.insert(_id, Unassigned(), 0, scope)
+                merged_type = Unassigned()
             else:
-                merged_type= self.table[identifier][-1].type
-                
+                merged_type = self.table[scope][_id][-1].type
+
             for _type in branch_types:
                 merged_type = join(merged_type, _type)
 
-            self.insert(identifier, merged_type, merge_line,scope)
+            self.insert(_id, merged_type, merge_line, scope)
 
     def merge_function_def(self, nested_function_symbol_tables):
-        
         pass
     
 
     def __str__(self):
-        if not self.table:
-            return "SymbolTable (empty)"
         lines = ["SymbolTable"]
-        for identifier, entries in self.table.items():
-            lines.append(f"  [{identifier}]")
-            for e in entries:
-                type_name = getattr(e.type, "__name__", str(e.type))
-                lines.append(f"    line {e.line:>4}  {type_name:<20}  scope={e.scope}")
+
+        for scope in Scope:
+            lines.append(f"\n[{scope.name}]")
+
+            scope_table = self.table.get(scope, {})
+            if not scope_table:
+                lines.append("  (empty)")
+                continue
+
+            for _id in scope_table:
+                lines.append(f"  [{_id}]")
+
+                for entry in scope_table[_id]:
+                    type_name = getattr(entry.type, "__name__", str(entry.type))
+                    lines.append(
+                        f"    line {entry.line:>4}  {type_name:<20}"
+                    )
+
         return "\n".join(lines)
 
-    def __contains__(self, identifier):
-        return identifier in self.table
-
-    def __getitem__(self, identifier):
-        return self.table[identifier]
 
