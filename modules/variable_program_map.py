@@ -1,10 +1,13 @@
 import ast
 import types
+from uuid import uuid4
 
 from modules.scopes import Scope
 from modules.symbol_table import SymbolTable
 from modules.type_lattice import Unassigned, Unknown
 from modules.lexical_scope_tree import LexicalScopeTree
+from modules.function_artifact import FunctionArtifact
+from modules.expression_evaluators import ConstantExprEvaluator, NameExprEvaluator
 
 # TODO
 # 1) Float(inf) is not handled because callables aren't implemented
@@ -20,18 +23,20 @@ class VariableProgramMap():
 
     def trace(self) -> None:
         self.top_table = SymbolTable()
-        self.symbol_table_stack.append( self.top_table )
+        global_namespace_id = uuid4()
+        self.symbol_table_stack.append((self.top_table, global_namespace_id))
         self.analyze_code_block(self.file_ast.body, Scope.GLOBAL)
 
     # TODO
     # Handle scope changes for individual variables
     def analyze_code_block(self, code_block: list[ast.AST], scope: Scope) -> None:
-        symbol_table = self.symbol_table_stack[-1]
+        symbol_table = self.symbol_table_stack[-1][0]
+        current_namespace_id = self.symbol_table_stack[-1][1]
 
         for node in code_block:
             if isinstance(node, ast.If):
                 if_symbol_table = symbol_table.fork_for_branch()
-                self.symbol_table_stack.append(if_symbol_table)
+                self.symbol_table_stack.append((if_symbol_table, current_namespace_id))
                 self.analyze_code_block(node.body, scope)
                 self.symbol_table_stack.pop()
 
@@ -40,7 +45,7 @@ class VariableProgramMap():
                     continue
 
                 else_symbol_table = symbol_table.fork_for_branch()
-                self.symbol_table_stack.append(else_symbol_table)
+                self.symbol_table_stack.append((else_symbol_table,current_namespace_id))
                 self.analyze_code_block(node.orelse, scope)
                 self.symbol_table_stack.pop()
 
@@ -48,7 +53,7 @@ class VariableProgramMap():
             
             elif isinstance(node, ast.While):
                 while_symbol_table = symbol_table.fork_for_branch()
-                self.symbol_table_stack.append(while_symbol_table)
+                self.symbol_table_stack.append((while_symbol_table, current_namespace_id))
                 self.analyze_code_block(node.body, scope)
                 self.symbol_table_stack.pop()
 
@@ -69,15 +74,21 @@ class VariableProgramMap():
                     symbol_table.insert(_id, raw_type, line, scope)
 
                 for_symbol_table = symbol_table.fork_for_branch()
-                self.symbol_table_stack.append(for_symbol_table)
+                self.symbol_table_stack.append((for_symbol_table, current_namespace_id))
                 self.analyze_code_block(node.body, scope)
                 self.symbol_table_stack.pop()
 
-            # TODO
-            # Handle args
-            # Handle kwards
-            # Handle return annotations
+   
             elif isinstance(node, ast.FunctionDef):
+                # Step 1: Create the new namespace_id
+                namespace_id = uuid4()
+
+                # Step 2: Parse the arguments and their types into a list
+                
+                # TODO
+                # Handle args
+                # Handle kwards
+                # Handle return annotations
                 parameters_list = []
                 # parse args
                 for arg_block in node.args.args:
@@ -97,17 +108,31 @@ class VariableProgramMap():
                         parameters_list[cur_param_idx][1] = default_type
                     cur_param_idx-=1
                 
-                #fork
-                function_def_symbol_table= symbol_table.fork_for_function(parameters_list)
-                self.symbol_table_stack.append(function_def_symbol_table)
+                # Step 3: Fork the table
+                function_def_symbol_table= symbol_table.fork_for_function(parameters_list, func_namespace_id)
+
+
+                # Step 4: Update the scope stack
+                self.symbol_table_stack.append((function_def_symbol_table, namespace_id))
+
+                # Step 5: Recurse analysis on the function body
                 self.analyze_code_block(function_def_symbol_table)
+
+                # Step 6: Pop
                 self.symbol_table_stack.pop()
 
+                # Step 7: 
                 symbol_table.merge_function_def(node.end_lineno, scope, while_symbol_table)
                 
+                # Step 8: TODO
+                # Flatten out the parent enclosure + local into a single enclosure env for the child, using shallow copy so that context changes are captured      
+                enclosure_environment = []
+
+                # Step 9: Update the current symbol table with the new reference binding to the function object type
                 func_name = node.name
                 func_line = node.lineno
-                symbol_table.insert(func_name, types.FunctionType, func_line, scope)
+                func_artifact = FunctionArtifact(node, namespace_id, [])
+                symbol_table.insert(func_name, types.FunctionType, func_line, scope, {"artifact": func_artifact})
 
             # Aug assign statement 
             elif isinstance(node, ast.AugAssign):
@@ -152,10 +177,18 @@ class VariableProgramMap():
         self.program_table_tree.insert((symbol_table, start_line, end_line))
 
     def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
-        _id,line = self.evaluate_target(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
+        _id,line = self.evaluate_lhs(right_expr)
         return (_id,raw_type,line)
-    
+
+    def evaluate_lhs(self, right_expr: ast.Target)-> tuple[str, int]:
+        symbol_table = self.symbol_table_stack[-1]
+
+        line = right_expr.lineno
+        _id = right_expr.id
+
+        return _id,line
+
     def evaluate_rhs(self, left_expr: ast.AST)-> type:
         symbol_table = self.symbol_table_stack[-1]
         raw_type = Unassigned()
@@ -170,14 +203,6 @@ class VariableProgramMap():
             raw_type = evaluator.evaluate(left_expr, symbol_table)
         return raw_type
 
-    def evaluate_target(self, right_expr: ast.Target)-> tuple[str, int]:
-        symbol_table = self.symbol_table_stack[-1]
-
-        line = right_expr.lineno
-        _id = right_expr.id
-
-        return _id,line
-
     def build_file_ast(self, file: str) -> ast.Module:
         with open(file) as f:
             tree = ast.parse(f.read())
@@ -191,44 +216,3 @@ class VariableProgramMap():
     def __repr__(self) -> str:
         return f"VariableProgramMap(file={self.file!r})"
 
-class ExprEvaluator:
-    pass
-
-class ConstantExprEvaluator():
-    def evaluate(self, expr: ast.Costant) -> type:
-        raw_obj = ast.literal_eval(expr)
-        raw_type = type(raw_obj)
-        return raw_type
-
-# needs to be updated to resolve on LEGB scopign, rn it only handles resolution on global
-class NameExprEvaluator():
-    def evaluate(self, expr: ast.AST, symbol_table: SymbolTable) -> type:
-        left__id = expr.id
-        left__id_table = symbol_table.table[Scope.GLOBAL][left__id]
-        left__id_latest_entry = left__id_table[-1]
-        raw_type = left__id_latest_entry.type
-        return raw_type
-
-class FunctionDefExprEvaluator(ExprEvaluator):
-    pass
-
-class CallExprEvaluator(ExprEvaluator):
-    pass
-
-class TenaryExprEvaluator(ExprEvaluator):
-    pass
-
-class ClassExprEvaluator(ExprEvaluator):
-    pass
-
-class MethodCallExprEvaluator(ExprEvaluator):
-    pass
-
-class ListExprEvaluator(ExprEvaluator):
-    pass
-
-class IteratorExprEvaluator(ExprEvaluator):
-    pass
-
-class ForExprEvaluator(ExprEvaluator):
-    pass
