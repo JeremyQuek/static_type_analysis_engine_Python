@@ -23,7 +23,12 @@ def main():
     )
     parser.add_argument(
         "-f",
-        "--file-prefix",
+        "--file",
+        help="Export a specific file (relative to tests/, e.g. functions/func_call.py)",
+    )
+    parser.add_argument(
+        "-p",
+        "--prefix",
         help="Only export for files whose names start with this prefix",
     )
     parser.add_argument(
@@ -38,8 +43,17 @@ def main():
 
     tests_root = Path(__file__).parent
 
-    if args.file_prefix:
-        files = sorted(tests_root.rglob(f"{args.file_prefix}*.py"))
+    if args.file:
+        target = tests_root / args.file
+        if not target.exists():
+            print(f"File not found: {target}")
+            return
+        export_file(target)
+    elif args.prefix:
+        files = sorted(tests_root.rglob(f"{args.prefix}*.py"))
+        if not files:
+            print(f"No files found with prefix: {args.prefix}")
+            return
         for file in files:
             export_file(file)
     else:

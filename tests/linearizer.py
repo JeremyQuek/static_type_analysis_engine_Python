@@ -14,6 +14,10 @@ class LinearEntry:
         type_name = getattr(self.type, "__name__", str(self.type))
         return f"{self.identifier}: {type_name}, line {self.line}"
 
+# TODO:
+# Since we changed the function definition to directly update global/nonlocal
+# The nested version having the ground truth model might no longer be relevant...possibly
+# Need to rethink
 
 class Linearizer:
     def __init__(self, program_table_tree: LexicalScopeTree):

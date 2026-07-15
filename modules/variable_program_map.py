@@ -139,14 +139,14 @@ class VariableProgramMap():
             elif isinstance(node, ast.Global):
                 for _id in node.names:
                     global_scope = self.scope_frame_stack[0].namespace_id
-                    scope_frame.mutated_symbols[_id] = global_scope
+                    scope_frame.mutated_symbols[_id] = (global_scope, Scope.GLOBAL)
 
             # Walk up the recursion stack
             # TODO: Add error handling of invalid call of nonlocal
             elif isinstance(node, ast.Nonlocal):
                 for _id in node.names:
                     origin_scope = self.resolve_symbol_origin(_id)
-                    scope_frame.mutated_symbols[_id] = origin_scope
+                    scope_frame.mutated_symbols[_id] = (origin_scope, Scope.LOCAL)
 
             # Aug assign statement
             elif isinstance(node, ast.AugAssign):
@@ -170,17 +170,30 @@ class VariableProgramMap():
 
         scope_frame = self.scope_frame_stack[-1]
         scope = scope_frame.scope_kind
+
         symbol_table = scope_frame.symbol_table
+        target_table = symbol_table
+        target_scope = scope
 
-        if scope==Scope.GLOBAL:
-            if _id not in symbol_table.tables[scope]:
-                symbol_table.insert(_id, Unassigned(), 0, scope)
+        in_function_definition = True
+        # If in local scope and _id was declared global/nonlocal, redirect to the target
+        if scope == Scope.LOCAL and _id in scope_frame.mutated_symbols:
+            target_namespace_id, target_scope = scope_frame.mutated_symbols[_id]
+            if in_function_definition:
+                # During definition: write to local copy of the target scope's table
+                target_table = symbol_table
+            else:
+                # At callsite: mutate the real ancestor's table
+                for frame in self.scope_frame_stack:
+                    if frame.namespace_id == target_namespace_id:
+                        target_table = frame.symbol_table
+                        break
 
-            if not isinstance(raw_type, Unassigned):
-                symbol_table.insert(_id, raw_type, line, scope)
-        elif scope == Scope.LOCAL:
-            pass
+        if _id not in target_table.tables[target_scope]:
+            target_table.insert(_id, Unassigned(), 0, target_scope)
 
+        if not isinstance(raw_type, Unassigned):
+            target_table.insert(_id, raw_type, line, target_scope)
 
     def evaluate_lhs(self, right_expr: ast.Target)-> tuple[str, int]:
         line = right_expr.lineno
