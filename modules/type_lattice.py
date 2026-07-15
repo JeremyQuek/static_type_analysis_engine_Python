@@ -2,25 +2,25 @@ class Concrete():
     pass
 
 class Unassigned():
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return isinstance(other, Unassigned)
-    
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         return "lattice<Unassigned>"
 
-    
+
 class Unknown:
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return isinstance(other, Unknown)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "lattice<Unknown>"
 
 class Union():
-    def __init__(self):
-        self.members = set()
+    def __init__(self) -> None:
+        self.members: set = set()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return " | ".join(
             sorted(
                 getattr(m, "__name__", str(m))
@@ -29,18 +29,18 @@ class Union():
             )
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"lattice.Union({{{self.__str__()}}})"
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if not isinstance(other, Union):
             return NotImplemented
         return self.members == other.members
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(frozenset(self.members))
 
-def join(a, b):
+def join(a, b) -> type:
     # ⊥ disappears
     if isinstance(a, Unassigned):
         return b

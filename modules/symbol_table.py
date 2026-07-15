@@ -1,19 +1,21 @@
 
+from __future__ import annotations
 import ast
 from copy import deepcopy
 from collections import defaultdict
+from uuid import UUID
 
 from modules.scopes import Scope
 from modules.type_lattice import Unassigned, join
 
 class SymbolTableEntry():
-    def __init__(self, _type, line, artifact = None):
+    def __init__(self, _type: type, line: int, artifact=None) -> None:
         self.type = _type
         self.line = line
         self.artifact = artifact
 
 class SymbolTable():
-    def __init__(self):
+    def __init__(self) -> None:
         self.table= {
             Scope.BUILTIN: defaultdict(list),
             Scope.GLOBAL: defaultdict(list),
@@ -24,7 +26,7 @@ class SymbolTable():
             Scope.LOCAL: defaultdict(list)
         }
 
-    def insert(self, _id, _type, line, scope, **kwargs):
+    def insert(self, _id: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
         self.table[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
 
     def fork(self) -> SymbolTable:
@@ -35,7 +37,7 @@ class SymbolTable():
     def fork_for_branch(self) -> SymbolTable:
         return self.fork()
 
-    def fork_for_function_def(self, parameters_list: list[tuple[str, type, int]], parent_namespace_id) -> SymbolTable:
+    def fork_for_function_def(self, parameters_list: list[tuple[str, type, int]], parent_namespace_id: UUID) -> SymbolTable:
         # Fork and change scopes
         child = SymbolTable()
         child.table[Scope.GLOBAL] = deepcopy(self.table[Scope.GLOBAL])
@@ -55,7 +57,7 @@ class SymbolTable():
         
         return child
 
-    def merge_branch(self, merge_line, scope, *branches, parent_branch=True):
+    def merge_branch(self, merge_line: int, scope: Scope, *branches: SymbolTable, parent_branch: bool = True) -> None:
         # Snapshot: how many entries each _id has in this scope before branching.
         parent_lengths = {
             _id: len(entries)
@@ -124,13 +126,13 @@ class SymbolTable():
     where we are in the call stack.
     """
 
-    def merge_function_def(self, nested_function_symbol_tables):
+    def merge_function_def(self, nested_function_symbol_table: SymbolTable) -> None:
         pass
     
-    def merge_function_call(self):
+    def merge_function_call(self) -> None:
         pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         lines = ["SymbolTable"]
 
         for scope in Scope:

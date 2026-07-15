@@ -121,7 +121,7 @@ class VariableProgramMap():
                 self.scope_frame_stack.pop()
 
                 # Step 7: 
-                symbol_table.merge_function_def(node.end_lineno, scope, while_symbol_table)
+                symbol_table.merge_function_def(node.end_lineno, scope, function_def_symbol_table)
                 
                 # Step 8: TODO
                 # Flatten out the parent enclosure + local into a single enclosure env for the child, using shallow copy so that context changes are captured      
