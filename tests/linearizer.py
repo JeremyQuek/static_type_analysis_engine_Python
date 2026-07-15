@@ -1,5 +1,6 @@
 from modules.symbol_table import SymbolTable
 from modules.lexical_scope_tree import LexicalScopeTree
+from modules.scopes import Scope
 
 
 class LinearEntry:
@@ -24,12 +25,15 @@ class Linearizer:
         seen = set()
         result = []
         for symbol_table, start_line, end_line in tree.tree:
-            for identifier, entries in symbol_table.table.items():
-                for e in entries:
-                    key = (identifier, e.line)
-                    if key not in seen:
-                        seen.add(key)
-                        result.append(LinearEntry(identifier, e.type, e.line, e.scope))
+            for scope, scope_dict in symbol_table.tables.items():
+                if scope == Scope.ENCLOSING:
+                    continue
+                for identifier, entries in scope_dict.items():
+                    for e in entries:
+                        key = (identifier, e.line)
+                        if key not in seen:
+                            seen.add(key)
+                            result.append(LinearEntry(identifier, e.type, e.line, scope))
         result.sort(key=lambda entry: entry.line)
         return result
 

@@ -4,7 +4,7 @@ sys.path.insert(0, ".")
 from modules.variable_program_map import VariableProgramMap
 from tests.linearizer import Linearizer
 
-variable_map = VariableProgramMap("tests/control_flow/control_flow.py")
+variable_map = VariableProgramMap("tests/functions/mutation.py")
 variable_map.trace()
 print(variable_map)
 

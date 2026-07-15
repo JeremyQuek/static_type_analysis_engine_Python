@@ -2,7 +2,7 @@ import random
 
 x = 0                       # x: int
 
-y = 10
+y = x
 if random.randint(0, 2) == 0:
     x = "hi"                # branch A -> x: str
     if True:
@@ -10,7 +10,7 @@ if random.randint(0, 2) == 0:
         if not False:
             h = "st"
             g = 5.5
-elif random.randint(0, 2) == 1:
+else:
     x = 3.5                 # branch B -> x: float
 
 

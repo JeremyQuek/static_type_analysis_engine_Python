@@ -16,22 +16,24 @@ class SymbolTableEntry():
 
 class SymbolTable():
     def __init__(self) -> None:
-        self.table= {
+        self.tables= {
             Scope.BUILTIN: defaultdict(list),
             Scope.GLOBAL: defaultdict(list),
-            # TODO: switch from index-based list to id-keyed dict so mutations
-            # can be propagated back across call boundaries (indexes are only
-            # meaningful within a single call chain, not when merging back up).
-            Scope.ENCLOSING: [],  # list[tuple[UUID, defaultdict[str, list]]]
+
+            # Scope.ENCLOSING is meant to entirely be a function definition side effect save copy of previous locals for best-effort
+            # definition body analysis. It is not used outside of that, when the enclosure environment is stored into FunctionArtifact
+            # which is used for call site
+            Scope.ENCLOSING: [],  # list[tuple[UUID, defaultdict[str, list]]] 
+            
             Scope.LOCAL: defaultdict(list)
         }
 
     def insert(self, _id: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
-        self.table[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
+        self.tables[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
 
     def fork(self) -> SymbolTable:
         child = SymbolTable()
-        child.table = deepcopy(self.table)
+        child.tables = deepcopy(self.tables)
         return child
 
     def fork_for_branch(self) -> SymbolTable:
@@ -40,16 +42,16 @@ class SymbolTable():
     def fork_for_function_def(self, parameters_list: list[tuple[str, type, int]], parent_namespace_id: UUID) -> SymbolTable:
         # Fork and change scopes
         child = SymbolTable()
-        child.table[Scope.GLOBAL] = deepcopy(self.table[Scope.GLOBAL])
+        child.tables[Scope.GLOBAL] = deepcopy(self.tables[Scope.GLOBAL])
 
         # Deepcopy the enclosing environment so that assingments don't mutate the external env
-        child.table[Scope.ENCLOSING] = deepcopy(self.table[Scope.ENCLOSING])
+        child.tables[Scope.ENCLOSING] = deepcopy(self.tables[Scope.ENCLOSING])
         parent_enclosure= defaultdict(list)
-        for _id, sub_table in self.table[Scope.LOCAL].items():
+        for _id, sub_table in self.tables[Scope.LOCAL].items():
             for entry in sub_table:
                 parent_enclosure[_id].append(SymbolTableEntry(entry.type, entry.line))
         
-        child.table[Scope.ENCLOSING].append((parent_namespace_id, parent_enclosure))
+        child.tables[Scope.ENCLOSING].append((parent_namespace_id, parent_enclosure))
 
         # insert params
         for arg__id, arg_type, arg_line in parameters_list:
@@ -61,13 +63,13 @@ class SymbolTable():
         # Snapshot: how many entries each _id has in this scope before branching.
         parent_lengths = {
             _id: len(entries)
-            for _id, entries in self.table[scope].items()
+            for _id, entries in self.tables[scope].items()
         }
 
         # Only consider _ids modified in at least one branch.
         touched = set()
         for branch in branches:
-            for _id, entries in branch.table[scope].items():
+            for _id, entries in branch.tables[scope].items():
                 pre = parent_lengths.get(_id, 0)
                 if len(entries) > pre:
                     touched.add(_id)
@@ -78,21 +80,22 @@ class SymbolTable():
             branch_types = []
 
             for branch in branches:
-                entries = branch.table[scope].get(_id)
+                entries = branch.tables[scope].get(_id)
 
                 if entries and len(entries) > pre:
                     branch_types.append(entries[-1].type)
                 else:
-                    parent_entries = self.table[scope].get(_id)
+                    parent_entries = self.tables[scope].get(_id)
                     branch_types.append(
                         parent_entries[-1].type if parent_entries else Unassigned()
                     )
 
-            if _id not in self.table[scope] or not parent_branch:
-                self.insert(_id, Unassigned(), 0, scope)
+            if _id not in self.tables[scope] or not parent_branch:
+                if _id not in self.tables[scope]:
+                    self.insert(_id, Unassigned(), 0, scope)
                 merged_type = Unassigned()
             else:
-                merged_type = self.table[scope][_id][-1].type
+                merged_type = self.tables[scope][_id][-1].type
 
             for _type in branch_types:
                 merged_type = join(merged_type, _type)
@@ -126,19 +129,13 @@ class SymbolTable():
     where we are in the call stack.
     """
 
-    def merge_function_def(self, nested_function_symbol_table: SymbolTable) -> None:
-        pass
-    
-    def merge_function_call(self) -> None:
-        pass
-
     def __str__(self) -> str:
         lines = ["SymbolTable"]
 
         for scope in Scope:
             lines.append(f"\n[{scope.name}]")
 
-            scope_table = self.table.get(scope, {})
+            scope_table = self.tables.get(scope, {})
             if not scope_table:
                 lines.append("  (empty)")
                 continue

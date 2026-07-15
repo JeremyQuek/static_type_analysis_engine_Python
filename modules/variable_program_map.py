@@ -25,19 +25,24 @@ class VariableProgramMap():
         self.global_table = SymbolTable()
         global_namespace_id = uuid4()
         self.scope_frame_stack.append(ScopeFrame(global_namespace_id, self.global_table, Scope.GLOBAL))
-        self.analyze_code_block(self.file_ast.body, Scope.GLOBAL)
+        self.analyze_code_block(self.file_ast.body)
 
     # TODO
     # Handle scope changes for individual variables
-    def analyze_code_block(self, code_block: list[ast.AST], scope: Scope) -> None:
-        symbol_table = self.scope_frame_stack[-1].symbol_table
-        current_namespace_id = self.scope_frame_stack[-1].namespace_id
+    def analyze_code_block(self, code_block: list[ast.AST]) -> None:
+        scope_frame = self.scope_frame_stack[-1]
+        scope_frame.start_line = code_block[0].lineno if code_block else 0
+        scope_frame.end_line = code_block[-1].end_lineno if code_block else 0
+
+        scope = scope_frame.scope_kind
+        symbol_table = scope_frame.symbol_table
+        current_namespace_id = scope_frame.namespace_id
 
         for node in code_block:
             if isinstance(node, ast.If):
                 if_symbol_table = symbol_table.fork_for_branch()
                 self.scope_frame_stack.append(ScopeFrame(current_namespace_id, if_symbol_table, scope))
-                self.analyze_code_block(node.body, scope)
+                self.analyze_code_block(node.body)
                 self.scope_frame_stack.pop()
 
                 if not node.orelse:
@@ -46,7 +51,7 @@ class VariableProgramMap():
 
                 else_symbol_table = symbol_table.fork_for_branch()
                 self.scope_frame_stack.append(ScopeFrame(current_namespace_id, else_symbol_table, scope))
-                self.analyze_code_block(node.orelse, scope)
+                self.analyze_code_block(node.orelse)
                 self.scope_frame_stack.pop()
 
                 symbol_table.merge_branch(node.end_lineno, scope, if_symbol_table, else_symbol_table, parent_branch=False)
@@ -54,7 +59,7 @@ class VariableProgramMap():
             elif isinstance(node, ast.While):
                 while_symbol_table = symbol_table.fork_for_branch()
                 self.scope_frame_stack.append(ScopeFrame(current_namespace_id, while_symbol_table, scope))
-                self.analyze_code_block(node.body, scope)
+                self.analyze_code_block(node.body)
                 self.scope_frame_stack.pop()
 
                 symbol_table.merge_branch(node.end_lineno, scope, while_symbol_table)
@@ -67,15 +72,11 @@ class VariableProgramMap():
             elif isinstance(node, ast.For):
                 right_expr = node.target
                 left_expr =  node.iter
-                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
-                if _id not in symbol_table:
-                    symbol_table.insert(_id, Unassigned(), 0, scope)
-                if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(_id, raw_type, line, scope)
+                self.evaluate_assignment(right_expr, left_expr)
 
                 for_symbol_table = symbol_table.fork_for_branch()
                 self.scope_frame_stack.append(ScopeFrame(current_namespace_id, for_symbol_table, scope))
-                self.analyze_code_block(node.body, scope)
+                self.analyze_code_block(node.body)
                 self.scope_frame_stack.pop()
 
    
@@ -115,81 +116,80 @@ class VariableProgramMap():
                 self.scope_frame_stack.append(ScopeFrame(func_namespace_id, function_def_symbol_table, Scope.LOCAL))
 
                 # Step 5: Recurse analysis on the function body
-                self.analyze_code_block(function_def_symbol_table)
+                self.analyze_code_block(node.body)
 
                 # Step 6: Pop
                 self.scope_frame_stack.pop()
 
-                # Step 7: 
-                symbol_table.merge_function_def(node.end_lineno, scope, function_def_symbol_table)
-                
-                # Step 8: TODO
-                # Flatten out the parent enclosure + local into a single enclosure env for the child, using shallow copy so that context changes are captured      
-                # Shallow copy the captured lexcial environment so that invocation has real side effects
-                enclosure_environment = [(ancestor_namespace_id, ancestor_env) for (ancestor_namespace_id, ancestor_env) in symbol_table[Scope.ENCLOSING]]
-                enclosure_environment.append((current_namespace_id, symbol_table[Scope.LOCAL]))
+                # Step 7: TODO
+                enclosure_environment = []
+                for i in range(len(self.scope_frame_stack)-1, -1, -1):
+                    ancestor_scope_frame = self.scope_frame_stack[i]
+                    ancestor_symbol_table = ancestor_scope_frame.symbol_table
+                    ancestor_id = ancestor_scope_frame.namespace_id
+                    enclosure_environment.append(self.scope_frame_stack[i])
 
-                # Step 9: Update the current symbol table with the new reference binding to the function object type
+                # Step 8: Update the current symbol table with the new reference binding to the function object type
                 func_name = node.name
                 func_line = node.lineno
                 func_artifact = FunctionArtifact(node, func_namespace_id, enclosure_environment)
-                symbol_table.insert(func_name, types.FunctionType, func_line, scope, {"artifact": func_artifact})
+                symbol_table.insert(func_name, types.FunctionType, func_line, scope, artifact=func_artifact)
 
-            # Aug assign statement 
+            # TODO: Add error handling of invalid call of global
+            elif isinstance(node, ast.Global):
+                for _id in node.names:
+                    global_scope = self.scope_frame_stack[0].namespace_id
+                    scope_frame.mutated_symbols[_id] = global_scope
+
+            # Walk up the recursion stack
+            # TODO: Add error handling of invalid call of nonlocal
+            elif isinstance(node, ast.Nonlocal):
+                for _id in node.names:
+                    origin_scope = self.resolve_symbol_origin(_id)
+                    scope_frame.mutated_symbols[_id] = origin_scope
+
+            # Aug assign statement
             elif isinstance(node, ast.AugAssign):
-                right_expr = node.target
-                left_expr =  node.value
-                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
-
-                if _id not in symbol_table:
-                    symbol_table.insert(_id, Unassigned(), 0, scope)
-                if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(_id, raw_type, line, scope)
+                self.evaluate_assignment(node.target, node.value)
 
             # multi assignment
             elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Tuple):
-                for right_expr,left_expr in zip(node.targets[0].elts, node.value.elts):
-                    _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
-
-                    if _id not in symbol_table:
-                        symbol_table.insert(_id, Unassigned(), 0, scope)
-
-                    if not (isinstance(raw_type, Unassigned)):
-                        symbol_table.insert(_id, raw_type, line, scope)
+                for right_expr, left_expr in zip(node.targets[0].elts, node.value.elts):
+                    self.evaluate_assignment(right_expr, left_expr)
 
             # normal assignment
             elif isinstance(node, ast.Assign):
-                right_expr = node.targets[0] 
-                left_expr =  node.value
-                _id,raw_type,line = self.evaluate_assignment(right_expr, left_expr)
-                
+                self.evaluate_assignment(node.targets[0], node.value)
 
-                # TODO
-                # is unassigned insertion always just on scope?
-                if _id not in symbol_table.table[scope]:
-                    symbol_table.insert(_id, Unassigned(), 0, scope)
+        self.program_table_tree.insert((symbol_table, scope_frame.start_line, scope_frame.end_line))
 
-                if not (isinstance(raw_type, Unassigned)):
-                    symbol_table.insert(_id, raw_type, line, scope)
-
-
-        start_line = code_block[0].lineno if code_block else 0
-        end_line = code_block[-1].end_lineno if code_block else 0
-        self.program_table_tree.insert((symbol_table, start_line, end_line))
-
-    def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST)-> tuple[str, type, int]:
+    
+    def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST) -> None:
+        _id, line = self.evaluate_lhs(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
-        _id,line = self.evaluate_lhs(right_expr)
-        return (_id,raw_type,line)
+
+        scope_frame = self.scope_frame_stack[-1]
+        scope = scope_frame.scope_kind
+        symbol_table = scope_frame.symbol_table
+
+        if scope==Scope.GLOBAL:
+            if _id not in symbol_table.tables[scope]:
+                symbol_table.insert(_id, Unassigned(), 0, scope)
+
+            if not isinstance(raw_type, Unassigned):
+                symbol_table.insert(_id, raw_type, line, scope)
+        elif scope == Scope.LOCAL:
+            pass
+
 
     def evaluate_lhs(self, right_expr: ast.Target)-> tuple[str, int]:
         line = right_expr.lineno
         _id = right_expr.id
-
+        
         return _id,line
 
     def evaluate_rhs(self, left_expr: ast.AST)-> type:
-        frame = self.scope_frame_stack[-1]
+        scope_frame = self.scope_frame_stack[-1]
         raw_type = Unassigned()
         if isinstance(left_expr, ast.Constant):
             evaluator = ConstantExprEvaluator()
@@ -198,9 +198,18 @@ class VariableProgramMap():
         elif isinstance(left_expr, ast.Name):
             # TODO
             # Add checks if the leftmost _id doesnt exist in the program! (Users can make mistakes in their code)
-            evaluator = NameExprEvaluator
-            raw_type = evaluator.evaluate(left_expr, frame.symbol_table)
+            evaluator = NameExprEvaluator()
+            raw_type = evaluator.evaluate(left_expr, self.scope_frame_stack)
         return raw_type
+
+    def resolve_symbol_origin(self, _id: str) -> UUID | None:
+        # Don't check the current frame
+        for i in range(len(self.scope_frame_stack)-2, -1, -1):
+            _scope_frame = self.scope_frame_stack[i]
+            _symbol_table = _scope_frame.symbol_table
+            if _id in _symbol_table.tables[Scope.LOCAL]:
+                return _scope_frame.namespace_id
+        return None
 
     def build_file_ast(self, file: str) -> ast.Module:
         with open(file) as f:
