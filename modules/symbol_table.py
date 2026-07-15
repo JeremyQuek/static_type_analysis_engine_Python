@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 import ast
+import builtins
 from copy import deepcopy
 from collections import defaultdict
 from uuid import UUID
@@ -13,7 +14,6 @@ class SymbolTableEntry():
         self.type = _type
         self.line = line
         self.artifact = artifact
-
 class SymbolTable():
     def __init__(self) -> None:
         self.tables= {
@@ -24,12 +24,23 @@ class SymbolTable():
             # definition body analysis. It is not used outside of that, when the enclosure environment is stored into FunctionArtifact
             # which is used for call site
             Scope.ENCLOSING: [],  # list[tuple[UUID, defaultdict[str, list]]] 
-            
+
             Scope.LOCAL: defaultdict(list)
         }
 
+        for name in dir(builtins):
+            obj = getattr(builtins, name)
+            _type =  type(obj)
+            self.insert(name, _type, 0, Scope.BUILTIN)
+
     def insert(self, _id: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
         self.tables[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
+    
+    def insert_free_variable(self, _id: str, _type: type, line: int, namespace_id: UUID, **kwargs) -> None:
+        for (_ns_id, enclosing_dict) in self.tables[Scope.ENCLOSING]:
+            if _ns_id == namespace_id:
+                enclosing_dict[_id].append(SymbolTableEntry(_type, line, **kwargs))
+                return
 
     def fork(self) -> SymbolTable:
         child = SymbolTable()

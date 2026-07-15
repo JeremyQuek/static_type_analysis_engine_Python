@@ -30,7 +30,7 @@ class Linearizer:
         result = []
         for symbol_table, start_line, end_line in tree.tree:
             for scope, scope_dict in symbol_table.tables.items():
-                if scope == Scope.ENCLOSING:
+                if scope in (Scope.ENCLOSING, Scope.BUILTIN):
                     continue
                 for identifier, entries in scope_dict.items():
                     for e in entries:

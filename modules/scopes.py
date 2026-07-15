@@ -16,4 +16,4 @@ class ScopeFrame:
     scope_kind: Scope
     start_line: int = 0
     end_line: int = 0
-    mutated_symbols: dict = field(default_factory=dict)
+    modified_symbol_scopes: dict = field(default_factory=dict)
