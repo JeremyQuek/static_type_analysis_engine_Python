@@ -138,16 +138,16 @@ class VariableProgramMap():
 
             # TODO: Add error handling of invalid call of global
             elif isinstance(node, ast.Global):
-                for _id in node.names:
+                for symbol in node.names:
                     global_scope = self.scope_frame_stack[0].namespace_id
-                    scope_frame.modified_symbol_scopes[_id] = (global_scope, "global")
+                    scope_frame.modified_symbol_scopes[symbol] = (global_scope, "global")
 
             # Walk up the recursion stack
             # TODO: Add error handling of invalid call of nonlocal
             elif isinstance(node, ast.Nonlocal):
-                for _id in node.names:
-                    origin_scope = self.resolve_symbol_origin(_id)
-                    scope_frame.modified_symbol_scopes[_id] = (origin_scope, "nonlocal")
+                for symbol in node.names:
+                    origin_scope = self.resolve_symbol_origin(symbol)
+                    scope_frame.modified_symbol_scopes[symbol] = (origin_scope, "nonlocal")
 
             # Aug assign statement
             elif isinstance(node, ast.AugAssign):
@@ -166,7 +166,7 @@ class VariableProgramMap():
 
     
     def evaluate_assignment(self, right_expr: ast.Target, left_expr: ast.AST) -> None:
-        _id, line = self.evaluate_lhs(right_expr)
+        symbol, line = self.evaluate_lhs(right_expr)
         raw_type = self.evaluate_rhs(left_expr)
 
         scope_frame = self.scope_frame_stack[-1]
@@ -174,9 +174,9 @@ class VariableProgramMap():
         symbol_table = scope_frame.symbol_table
         in_function_definition = True
 
-        # if we are global, trivial, scope modifiers shldnt exist 
+        # if we are global, trivial, scope modifiers shldnt exist
         if scope == GLOBAL:
-            self._insert_into(symbol_table, _id, raw_type, line, GLOBAL)
+            self._insert_into(symbol_table, symbol, raw_type, line, GLOBAL)
 
         # If we are in a function
         # Assignment targets require different lookup semantics from NameExprEvaluator.
@@ -190,20 +190,20 @@ class VariableProgramMap():
 
 
         # TODO nonlocal propagates on read
-        # But if u assign a propagated nonlocal x from a parent without calling nonlocal 
+        # But if u assign a propagated nonlocal x from a parent without calling nonlocal
         # You reassign it to a local
         elif scope == LOCAL:
             # Case 1: Target scope modified
-            if _id in scope_frame.modified_symbol_scopes:
-                target_namespace_id, target_scope = scope_frame.modified_symbol_scopes[_id]
+            if symbol in scope_frame.modified_symbol_scopes:
+                target_namespace_id, target_scope = scope_frame.modified_symbol_scopes[symbol]
 
                 # Case 1a: In function definition, modify local copy
                 if in_function_definition:
                     if target_scope == GLOBAL:
-                        self._insert_into(symbol_table, _id, raw_type, line, GLOBAL)
+                        self._insert_into(symbol_table, symbol, raw_type, line, GLOBAL)
                     else:
                         if not isinstance(raw_type, Unassigned):
-                            symbol_table.insert_free_variable(_id, raw_type, line, target_namespace_id)
+                            symbol_table.insert_free_variable(symbol, raw_type, line, target_namespace_id)
 
                 # Case 1b: At callsite: modify the real ancestor's table
                 else:
@@ -211,24 +211,24 @@ class VariableProgramMap():
                     # Need a way to access it
                     for frame in self.scope_frame_stack:
                         if frame.namespace_id == target_namespace_id:
-                            self._insert_into(frame.symbol_table, _id, raw_type, line, target_scope)
+                            self._insert_into(frame.symbol_table, symbol, raw_type, line, target_scope)
                             break
 
             # Case 2: Target scope not modified, so its local
             else:
-                self._insert_into(symbol_table, _id, raw_type, line, LOCAL)
+                self._insert_into(symbol_table, symbol, raw_type, line, LOCAL)
 
-    def _insert_into(self, table: SymbolTable, _id: str, raw_type: type, line: int, scope: Scope) -> None:
-        if _id not in table.sections[scope]:
-            table.insert(_id, Unassigned(), 0, scope)
+    def _insert_into(self, table: SymbolTable, symbol: str, raw_type: type, line: int, scope: Scope) -> None:
+        if symbol not in table.sections[scope]:
+            table.insert(symbol, Unassigned(), 0, scope)
         if not isinstance(raw_type, Unassigned):
-            table.insert(_id, raw_type, line, scope)
+            table.insert(symbol, raw_type, line, scope)
 
     def evaluate_lhs(self, right_expr: ast.Target)-> tuple[str, int]:
         line = right_expr.lineno
-        _id = right_expr.id
-        
-        return _id,line
+        symbol = right_expr.id
+
+        return symbol,line
 
     def evaluate_rhs(self, left_expr: ast.AST)-> type:
         scope_frame = self.scope_frame_stack[-1]
@@ -239,17 +239,17 @@ class VariableProgramMap():
 
         elif isinstance(left_expr, ast.Name):
             # TODO
-            # Add checks if the leftmost _id doesnt exist in the program! (Users can make mistakes in their code)
+            # Add checks if the leftmost symbol doesnt exist in the program! (Users can make mistakes in their code)
             evaluator = NameExprEvaluator()
             raw_type = evaluator.evaluate(left_expr, self.scope_frame_stack)
         return raw_type
 
-    def resolve_symbol_origin(self, _id: str) -> UUID | None:
+    def resolve_symbol_origin(self, symbol: str) -> UUID | None:
         # Don't check the current frame
         for i in range(len(self.scope_frame_stack)-2, -1, -1):
             _scope_frame = self.scope_frame_stack[i]
             _symbol_table = _scope_frame.symbol_table
-            if _id in _symbol_table.sections[LOCAL]:
+            if symbol in _symbol_table.sections[LOCAL]:
                 return _scope_frame.namespace_id
         return None
 

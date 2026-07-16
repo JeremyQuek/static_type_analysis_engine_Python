@@ -34,14 +34,14 @@ class SymbolTable():
             _type =  type(obj)
             self.insert(name, _type, 0, BUILTIN)
 
-    def insert(self, _id: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
-        self.sections[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
-    
+    def insert(self, symbol: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
+        self.sections[scope][symbol].append(SymbolTableEntry(_type, line, **kwargs))
+
     # This is for function definitons, where we modify the enclosure scope of the local table
-    def insert_free_variable(self, _id: str, _type: type, line: int, namespace_id: UUID, **kwargs) -> None:
+    def insert_free_variable(self, symbol: str, _type: type, line: int, namespace_id: UUID, **kwargs) -> None:
         for (_ns_id, enclosing_dict) in self.sections[ENCLOSING]:
             if _ns_id == namespace_id:
-                enclosing_dict[_id].append(SymbolTableEntry(_type, line, **kwargs))
+                enclosing_dict[symbol].append(SymbolTableEntry(_type, line, **kwargs))
                 return
 
     def fork(self) -> SymbolTable:
@@ -60,9 +60,9 @@ class SymbolTable():
         # Deepcopy the enclosing environment so that assingments don't mutate the external env
         child.sections[ENCLOSING] = deepcopy(self.sections[ENCLOSING])
         parent_enclosure= defaultdict(list)
-        for _id, sub_table in self.sections[LOCAL].items():
+        for symbol, sub_table in self.sections[LOCAL].items():
             for entry in sub_table:
-                parent_enclosure[_id].append(SymbolTableEntry(entry.type, entry.line))
+                parent_enclosure[symbol].append(SymbolTableEntry(entry.type, entry.line))
         
         child.sections[ENCLOSING].append((parent_namespace_id, parent_enclosure))
 
@@ -73,47 +73,44 @@ class SymbolTable():
         return child
 
     def merge_branch(self, merge_line: int, scope: Scope, *branches: SymbolTable, parent_branch: bool = True) -> None:
-        # Snapshot: how many entries each _id has in this scope before branching.
         parent_lengths = {
-            _id: len(entries)
-            for _id, entries in self.sections[scope].items()
+            symbol: len(entries)
+            for symbol, entries in self.sections[scope].items()
         }
 
-        # Only consider _ids modified in at least one branch.
         touched = set()
         for branch in branches:
-            for _id, entries in branch.sections[scope].items():
-                pre = parent_lengths.get(_id, 0)
+            for symbol, entries in branch.sections[scope].items():
+                pre = parent_lengths.get(symbol, 0)
                 if len(entries) > pre:
-                    touched.add(_id)
+                    touched.add(symbol)
 
-        # Merge the resulting types back into the parent table.
-        for _id in touched:
-            pre = parent_lengths.get(_id, 0)
+        for symbol in touched:
+            pre = parent_lengths.get(symbol, 0)
             branch_types = []
 
             for branch in branches:
-                entries = branch.sections[scope].get(_id)
+                entries = branch.sections[scope].get(symbol)
 
                 if entries and len(entries) > pre:
                     branch_types.append(entries[-1].type)
                 else:
-                    parent_entries = self.sections[scope].get(_id)
+                    parent_entries = self.sections[scope].get(symbol)
                     branch_types.append(
                         parent_entries[-1].type if parent_entries else Unassigned()
                     )
 
-            if _id not in self.sections[scope] or not parent_branch:
-                if _id not in self.sections[scope]:
-                    self.insert(_id, Unassigned(), 0, scope)
+            if symbol not in self.sections[scope] or not parent_branch:
+                if symbol not in self.sections[scope]:
+                    self.insert(symbol, Unassigned(), 0, scope)
                 merged_type = Unassigned()
             else:
-                merged_type = self.sections[scope][_id][-1].type
+                merged_type = self.sections[scope][symbol][-1].type
 
             for _type in branch_types:
                 merged_type = join(merged_type, _type)
 
-            self.insert(_id, merged_type, merge_line, scope)
+            self.insert(symbol, merged_type, merge_line, scope)
 
     
     # HARD TODO
@@ -153,10 +150,10 @@ class SymbolTable():
                 lines.append("  (empty)")
                 continue
 
-            for _id in scope_table:
-                lines.append(f"  [{_id}]")
+            for symbol in scope_table:
+                lines.append(f"  [{symbol}]")
 
-                for entry in scope_table[_id]:
+                for entry in scope_table[symbol]:
                     type_name = getattr(entry.type, "__name__", str(entry.type))
                     lines.append(
                         f"    line {entry.line:>4}  {type_name:<20}"

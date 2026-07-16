@@ -16,15 +16,15 @@ class ConstantExprEvaluator():
 
 class NameExprEvaluator():
     def evaluate(self, expr: ast.AST, scope_frame_stack: list[ScopeFrame]) -> type:
-        _id = expr.id
+        symbol = expr.id
         scope_frame = scope_frame_stack[-1]
         symbol_table = scope_frame.symbol_table
 
         # TODO: Only supports definition time lookup
         # Check for mutated Scope
         modified_namespace_id, modified_scope = None, None
-        if _id in scope_frame.modified_symbol_scopes:
-            modified_namespace_id, modified_scope = scope_frame.modified_symbol_scopes[_id]
+        if symbol in scope_frame.modified_symbol_scopes:
+            modified_namespace_id, modified_scope = scope_frame.modified_symbol_scopes[symbol]
 
         SEARCH_LOCAL = (
             scope_frame.scope_kind == LOCAL
@@ -37,13 +37,13 @@ class NameExprEvaluator():
         )
         SEARCH_GLOBAL = True
         SEARCH_BUILTIN = True
-        
+
         # LEGB resolution
-        
+
         # Try local
         if SEARCH_LOCAL:
-            if _id in symbol_table.sections[LOCAL]:
-                return self._resolve_from(_id, symbol_table, LOCAL)
+            if symbol in symbol_table.sections[LOCAL]:
+                return self._resolve_from(symbol, symbol_table, LOCAL)
 
         # Try enclosing
         if SEARCH_ENCLOSING:
@@ -51,26 +51,26 @@ class NameExprEvaluator():
                 if modified_namespace_id is not None and namespace_id != modified_namespace_id:
                     continue
 
-                if _id in enclosing_dict:
-                    return enclosing_dict[_id][-1].type
+                if symbol in enclosing_dict:
+                    return enclosing_dict[symbol][-1].type
 
-        # Try Global 
+        # Try Global
         if SEARCH_GLOBAL:
             global_frame = scope_frame_stack[0]
-            if _id in global_frame.symbol_table.sections[GLOBAL]:
-                return self._resolve_from(_id, global_frame.symbol_table, GLOBAL)
+            if symbol in global_frame.symbol_table.sections[GLOBAL]:
+                return self._resolve_from(symbol, global_frame.symbol_table, GLOBAL)
 
         # Try builtin
         if SEARCH_BUILTIN:
-            if _id in global_frame.symbol_table.sections[BUILTIN]:
-                return self._resolve_from(_id, global_frame.symbol_table, BUILTIN)
+            if symbol in global_frame.symbol_table.sections[BUILTIN]:
+                return self._resolve_from(symbol, global_frame.symbol_table, BUILTIN)
 
         return Unknown()
 
 
 
-    def _resolve_from(self, _id: str, symbol_table: SymbolTable, scope: Scope) -> type:
-        entries = symbol_table.sections[scope].get(_id)
+    def _resolve_from(self, symbol: str, symbol_table: SymbolTable, scope: Scope) -> type:
+        entries = symbol_table.sections[scope].get(symbol)
         if entries:
             return entries[-1].type
         return Unassigned()
