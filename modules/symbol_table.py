@@ -52,26 +52,6 @@ class SymbolTable():
     def fork_for_branch(self) -> SymbolTable:
         return self.fork()
 
-    def fork_for_function_def(self, parameters_list: list[tuple[str, type, int]], parent_namespace_id: UUID) -> SymbolTable:
-        # Fork and change scopes
-        child = SymbolTable()
-        child.sections[GLOBAL] = deepcopy(self.sections[GLOBAL])
-
-        # Deepcopy the enclosing environment so that assingments don't mutate the external env
-        child.sections[ENCLOSING] = deepcopy(self.sections[ENCLOSING])
-        parent_enclosure= defaultdict(list)
-        for symbol, sub_table in self.sections[LOCAL].items():
-            for entry in sub_table:
-                parent_enclosure[symbol].append(SymbolTableEntry(entry.type, entry.line))
-        
-        child.sections[ENCLOSING].append((parent_namespace_id, parent_enclosure))
-
-        # insert params
-        for arg__id, arg_type, arg_line in parameters_list:
-            child.insert(arg__id, arg_type, arg_line, LOCAL)
-        
-        return child
-
     def merge_branch(self, merge_line: int, scope: Scope, *branches: SymbolTable, parent_branch: bool = True) -> None:
         parent_lengths = {
             symbol: len(entries)
@@ -113,6 +93,26 @@ class SymbolTable():
             self.insert(symbol, merged_type, merge_line, scope)
 
     
+    def fork_for_function_def(self, parameters_list: list[tuple[str, type, int]], parent_namespace_id: UUID) -> SymbolTable:
+        # Fork and change scopes
+        child = SymbolTable()
+        child.sections[GLOBAL] = deepcopy(self.sections[GLOBAL])
+
+        # Deepcopy the enclosing environment so that assingments don't mutate the external env
+        child.sections[ENCLOSING] = deepcopy(self.sections[ENCLOSING])
+        parent_enclosure= defaultdict(list)
+        for symbol, sub_table in self.sections[LOCAL].items():
+            for entry in sub_table:
+                parent_enclosure[symbol].append(SymbolTableEntry(entry.type, entry.line))
+        
+        child.sections[ENCLOSING].append((parent_namespace_id, parent_enclosure))
+
+        # insert params
+        for arg__id, arg_type, arg_line in parameters_list:
+            child.insert(arg__id, arg_type, arg_line, LOCAL)
+        
+        return child
+        
     # HARD TODO
     """
     Function definitions and function calls must be handled separately.

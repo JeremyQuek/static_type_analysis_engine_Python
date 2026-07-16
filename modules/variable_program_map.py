@@ -6,7 +6,7 @@ from copy import deepcopy
 from modules.scopes import Scope, GlobalScope, FunctionScope, BranchScope, ClassScope, BUILTIN, GLOBAL, ENCLOSING, LOCAL, CLASS
 from modules.symbol_table import SymbolTable
 from modules.type_lattice import Unassigned, Unknown
-from modules.lexical_scope_tree import LexicalScopeTree
+from data_structs.lexical_scope_tree import LexicalScopeTree
 from modules.function_metadata import FunctionMetadata
 from modules.expression_evaluators import ConstantExprEvaluator, NameExprEvaluator
 

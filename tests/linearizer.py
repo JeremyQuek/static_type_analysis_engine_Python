@@ -1,5 +1,5 @@
 from modules.symbol_table import SymbolTable
-from modules.lexical_scope_tree import LexicalScopeTree
+from data_structs.lexical_scope_tree import LexicalScopeTree
 from modules.scopes import Scope
 
 
