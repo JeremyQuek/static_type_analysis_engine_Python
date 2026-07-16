@@ -37,8 +37,9 @@ class SymbolTable():
     def insert(self, _id: str, _type: type, line: int, scope: Scope, **kwargs) -> None:
         self.sections[scope][_id].append(SymbolTableEntry(_type, line, **kwargs))
     
+    # This is for function definitons, where we modify the enclosure scope of the local table
     def insert_free_variable(self, _id: str, _type: type, line: int, namespace_id: UUID, **kwargs) -> None:
-        for (_ns_id, enclosing_dict) in self.sections[Sccommope.ENCLOSING]:
+        for (_ns_id, enclosing_dict) in self.sections[ENCLOSING]:
             if _ns_id == namespace_id:
                 enclosing_dict[_id].append(SymbolTableEntry(_type, line, **kwargs))
                 return

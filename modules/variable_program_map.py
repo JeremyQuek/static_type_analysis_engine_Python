@@ -121,7 +121,8 @@ class VariableProgramMap():
                 # Step 6: Pop
                 self.scope_frame_stack.pop()
 
-                # Step 7: TODO
+                # Step 7: The closure environment is captured during definition and irregardless of the call stack
+                # Environment is fixed but variables are live
                 closure_environment = []
                 for i in range(len(self.scope_frame_stack)-1, -1, -1):
                     ancestor_scope_frame = self.scope_frame_stack[i]
@@ -139,14 +140,14 @@ class VariableProgramMap():
             elif isinstance(node, ast.Global):
                 for _id in node.names:
                     global_scope = self.scope_frame_stack[0].namespace_id
-                    scope_frame.modified_symbol_scopes[_id] = (global_scope, GLOBAL)
+                    scope_frame.modified_symbol_scopes[_id] = (global_scope, "global")
 
             # Walk up the recursion stack
             # TODO: Add error handling of invalid call of nonlocal
             elif isinstance(node, ast.Nonlocal):
                 for _id in node.names:
                     origin_scope = self.resolve_symbol_origin(_id)
-                    scope_frame.modified_symbol_scopes[_id] = (origin_scope, LOCAL)
+                    scope_frame.modified_symbol_scopes[_id] = (origin_scope, "nonlocal")
 
             # Aug assign statement
             elif isinstance(node, ast.AugAssign):
@@ -170,42 +171,58 @@ class VariableProgramMap():
 
         scope_frame = self.scope_frame_stack[-1]
         scope = scope_frame.scope_kind
-
         symbol_table = scope_frame.symbol_table
-        target_table = symbol_table
-        target_scope = scope
-
         in_function_definition = True
-        
-        # TODO: Refactor to make the branching more explicit rahter than trying to be clever and conscise with code like how ai does it
 
-        # If we are in a function scope (valid to have nonlocal/global)
-        # And the target id has been modified, then we see if we need to target other scopes
-        # In the else case, we should insert direct to wtv scope were in (local or global)
-        if _id in scope_frame.modified_symbol_scopes:
-            target_namespace_id, target_scope = scope_frame.modified_symbol_scopes[_id]
-            if in_function_definition:
-                # If inside a function definition, the changes to global and nonlocal 
-                # should affect the local copy of the enclosure and global vars
-                if target_scope == GLOBAL:
-                    target_table = symbol_table
+        # if we are global, trivial, scope modifiers shldnt exist 
+        if scope == GLOBAL:
+            self._insert_into(symbol_table, _id, raw_type, line, GLOBAL)
 
+        # If we are in a function
+        # Assignment targets require different lookup semantics from NameExprEvaluator.
+        #
+        # NameExprEvaluator resolves a value, so it performs a read-only LEGB lookup
+        # until the first matching binding is found.
+        #
+        # Assignment instead resolves the destination of the write. If the identifier
+        # has been marked as global/nonlocal, the assignment must target a fundamentally
+        # different table to insert into, hence the branching logic searches for that table
+
+
+        # TODO nonlocal propagates on read
+        # But if u assign a propagated nonlocal x from a parent without calling nonlocal 
+        # You reassign it to a local
+        elif scope == LOCAL:
+            # Case 1: Target scope modified
+            if _id in scope_frame.modified_symbol_scopes:
+                target_namespace_id, target_scope = scope_frame.modified_symbol_scopes[_id]
+
+                # Case 1a: In function definition, modify local copy
+                if in_function_definition:
+                    if target_scope == GLOBAL:
+                        self._insert_into(symbol_table, _id, raw_type, line, GLOBAL)
+                    else:
+                        if not isinstance(raw_type, Unassigned):
+                            symbol_table.insert_free_variable(_id, raw_type, line, target_namespace_id)
+
+                # Case 1b: At callsite: modify the real ancestor's table
                 else:
-                    if not isinstance(raw_type, Unassigned):
-                        symbol_table.insert_free_variable(_id, raw_type, line, target_namespace_id)
-                    return
+                    # TODO: Dont traverse the stack frame, traverse closure environment which contains frames that might already be removed
+                    # Need a way to access it
+                    for frame in self.scope_frame_stack:
+                        if frame.namespace_id == target_namespace_id:
+                            self._insert_into(frame.symbol_table, _id, raw_type, line, target_scope)
+                            break
+
+            # Case 2: Target scope not modified, so its local
             else:
-                # Else if at the callsite, then we mutate the real ancestor's table
-                for frame in self.scope_frame_stack:
-                    if frame.namespace_id == target_namespace_id:
-                        target_table = frame.symbol_table
-                        break
+                self._insert_into(symbol_table, _id, raw_type, line, LOCAL)
 
-        if _id not in target_table.sections[target_scope]:
-            target_table.insert(_id, Unassigned(), 0, target_scope)
-
+    def _insert_into(self, table: SymbolTable, _id: str, raw_type: type, line: int, scope: Scope) -> None:
+        if _id not in table.sections[scope]:
+            table.insert(_id, Unassigned(), 0, scope)
         if not isinstance(raw_type, Unassigned):
-            target_table.insert(_id, raw_type, line, target_scope)
+            table.insert(_id, raw_type, line, scope)
 
     def evaluate_lhs(self, right_expr: ast.Target)-> tuple[str, int]:
         line = right_expr.lineno
