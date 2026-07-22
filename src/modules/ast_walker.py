@@ -6,17 +6,17 @@ class ASTWalker():
     def __init__(self, cfg: ControlFlowGraph, filepath: str):
         self.cfg = cfg
         self.filepath = filepath
-        self.ast = self.get_ast()
+        self.ast = self._get_ast()
+    
+    def traverse_ast_for_cfg(self):
+        self._parse(self.ast, None)
 
-    def get_ast(self) -> ast.AST:
+    def _get_ast(self) -> ast.AST:
         with open(self.filepath, "r", encoding="utf-8") as f:
             source_code = f.read()
-        return ast.parse(source_code, filename=self.filepath)
+        return ast._parse(source_code, filename=self.filepath)
 
-    def traverse_ast_for_cfg(self):
-        self.parse(self.ast, None)
-
-    def get_body_type(self, ast_node: ast.AST):
+    def _get_body_type(self, ast_node: ast.AST):
         if isinstance(ast_node, ast_custom.IfBody):
             return ast_custom.IfBody
         if isinstance(ast_node, ast_custom.ElseBody):
@@ -27,7 +27,7 @@ class ASTWalker():
             return ast_custom.ClassBody
         return ast_custom.Body
 
-    def parse(self, ast_node: ast.AST, parent: ast.AST | None = None):
+    def _parse(self, ast_node: ast.AST, parent: ast.AST | None = None):
         """
         Recursively decomposes a code region into CFG layers, returning its exit frontier.
 
@@ -53,13 +53,13 @@ class ASTWalker():
         - Class def: rejoin it (class body executes immediately)
         - Control flow: collect if_tail + else_tail as the combined frontier
 
-        This is why the recursion generalizes cleanly. parse() never needs to know whether
+        This is why the recursion generalizes cleanly. _parse() never needs to know whether
         its child was a while, an if, or a nested class. It simply asks "where are your
         exits?" and composes them into the enclosing graph.
         """
 
         code_body = ast_node.body
-        CustomBody = self.get_body_type(ast_node)
+        CustomBody = self._get_body_type(ast_node)
 
         # Step 1 split the list into sections
         l=0
@@ -86,7 +86,7 @@ class ASTWalker():
                         end_lineno=cur_node.body[-1].end_lineno,
                         end_col_offset=cur_node.body[-1].end_col_offset,
                     )
-                    self.parse(func_body, parent=cur_node)
+                    self._parse(func_body, parent=cur_node)
                     l = r+1
 
                 case ast.ClassDef():
@@ -108,7 +108,7 @@ class ASTWalker():
                         end_lineno=cur_node.body[-1].end_lineno,
                         end_col_offset=cur_node.body[-1].end_col_offset,
                     )
-                    tail = self.parse(class_body, parent=cur_node)
+                    tail = self._parse(class_body, parent=cur_node)
                     cfg_nodes.append(tail)
                     for tail_node in tail:
                         skip.add((cur_node, tail_node))
@@ -134,7 +134,7 @@ class ASTWalker():
                         end_lineno=cur_node.body[-1].end_lineno,
                         end_col_offset=cur_node.body[-1].end_col_offset,
                     )
-                    if_tail = self.parse(if_body, parent=cur_node)
+                    if_tail = self._parse(if_body, parent=cur_node)
 
                     if cur_node.orelse:
                         else_body = ast_custom.ElseBody(
@@ -146,7 +146,7 @@ class ASTWalker():
                         )
                     else:
                         else_body = ast_custom.ElseBody(body=[ast_custom.ElseBody()])
-                    else_tail = self.parse(else_body, parent=cur_node)
+                    else_tail = self._parse(else_body, parent=cur_node)
 
                     tail = if_tail + else_tail
                     cfg_nodes.append(tail)
